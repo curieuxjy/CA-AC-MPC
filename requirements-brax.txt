@@ -1,0 +1,25 @@
+# Brax port dependencies (Phase 1+). CPU-only is fine for validation.
+#
+# IMPORTANT: the repo pins gym==0.21, which does NOT install on Python >=3.11.
+# Use a Python 3.10 virtualenv for this stack:
+#
+#   python3.10 -m venv .venv && source .venv/bin/activate
+#   pip install --upgrade "pip<24.1" "setuptools<66" wheel   # gym 0.21 needs old setuptools
+#   pip install -r requirements-brax.txt
+#
+# For a CUDA machine, install the matching jax[cuda] / torch CUDA wheels instead
+# of the CPU defaults below.
+
+torch
+numpy
+pyyaml
+matplotlib
+pandas
+tqdm
+rich
+gym==0.21.0
+
+# JAX + Brax (CPU). DiffMimic targets jax~=0.4.2; Brax >=0.9 matches the API
+# this adapter is written against. Pin if you hit API drift.
+jax[cpu]>=0.4.2
+brax>=0.9.0

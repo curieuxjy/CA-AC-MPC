@@ -33,6 +33,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnvW
 from envs.gate_racing_env import GateRacingEnv
 from mlp_mpc_policy import MlpMpcPolicy
 from mlp_mpc_policy_diffmpc import MlpMpcPolicyDiffMPC
+from mlp_mpc_policy_brax import MlpMpcPolicyBrax
 from mlp_only_policy import MlpOnlyPolicy
 from utils.evaluate_acmpc2 import evaluate_model
 
@@ -96,6 +97,12 @@ def _run_input_sanity_checks(
         if hasattr(train_env, "get_original_obs"):
             raw_obs = train_env.get_original_obs()
 
+        if isinstance(state, np.ndarray) and state.ndim == 2 and state.shape[1] != int(mpc_state_dim):
+            print(
+                f"[Sanity] Warning: state width ({state.shape[1]}) != mpc_state_dim "
+                f"({mpc_state_dim}). The MPC-state prefix and the dynamics model must agree."
+            )
+
         if isinstance(raw_obs, np.ndarray) and isinstance(state, np.ndarray):
             raw_state = raw_obs[:, : int(mpc_state_dim)]
             state_delta = float(np.max(np.abs(raw_state - state)))
@@ -139,6 +146,7 @@ def _build_training_signature(
     mpc_horizon: int,
     track: str,
     track_config_path: Optional[str],
+    env_backend: str = "gate",
 ) -> Dict[str, Any]:
     if track_config_path is not None:
         track_key = f"yaml:{Path(track_config_path).expanduser().resolve()}"
@@ -150,6 +158,7 @@ def _build_training_signature(
         "mpc_backend": str(mpc_backend),
         "mpc_horizon": int(mpc_horizon),
         "track_key": track_key,
+        "env_backend": str(env_backend),
     }
 
 
@@ -176,8 +185,11 @@ def _check_signature_compatibility(
 ) -> Tuple[bool, str]:
     if observed is None:
         return False, "missing signature metadata"
-    keys = ("policy_type", "mpc_backend", "mpc_horizon", "track_key")
+    keys = ("policy_type", "mpc_backend", "mpc_horizon", "track_key", "env_backend")
     for key in keys:
+        # Backward compatible: keys absent from older checkpoints are not enforced.
+        if key not in observed:
+            continue
         if observed.get(key) != expected.get(key):
             return False, f"mismatch {key}: expected={expected.get(key)!r} observed={observed.get(key)!r}"
     return True, "ok"
@@ -353,6 +365,34 @@ def _make_gate_env_fn(track: str, env_kwargs: Dict[str, Any]):
     return _thunk
 
 
+def _make_brax_venv(
+    *,
+    env_kwargs: Dict[str, Any],
+    seed: int,
+    n_envs: int,
+):
+    """Build the raw (unnormalized) Brax-backed VecEnv.
+
+    Reads Brax-specific keys out of ``env_kwargs`` (so the gate path is
+    untouched): ``robot``, ``episode_length``, ``action_repeat``,
+    ``brax_backend``, ``env_name``, ``brax_env_kwargs``.
+    """
+    from envs.brax_vec_env import BraxVecEnvAdapter
+
+    bk = dict(env_kwargs or {})
+    return BraxVecEnvAdapter(
+        robot=str(bk.get("robot", "halfcheetah")),
+        n_envs=int(n_envs),
+        episode_length=int(bk.get("episode_length", 1000)),
+        action_repeat=int(bk.get("action_repeat", 1)),
+        seed=int(seed),
+        backend=bk.get("brax_backend", None),
+        env_name=bk.get("env_name", None),
+        mpc_state_mode=str(bk.get("mpc_state_mode", "full")),
+        env_kwargs=dict(bk.get("brax_env_kwargs", {}) or {}),
+    )
+
+
 def _make_vec_env_from_cfg(
     *,
     track: str,
@@ -366,14 +406,22 @@ def _make_vec_env_from_cfg(
     state_dim: int,
     train_vecnorm: Optional[VecNormalize] = None,
     vecnorm_stats_path: Optional[str] = None,
+    env_backend: str = "gate",
 ):
-    vec_env_cls = DummyVecEnv if vec_type == "dummy" else SubprocVecEnv
-    venv = make_vec_env(
-        _make_gate_env_fn(track, env_kwargs),
-        n_envs=int(n_envs),
-        seed=int(seed),
-        vec_env_cls=vec_env_cls,
-    )
+    if str(env_backend).lower() == "brax":
+        # Brax is already vmap-batched in a single process: ignore dummy/subproc.
+        venv = _make_brax_venv(env_kwargs=env_kwargs, seed=seed, n_envs=n_envs)
+        # The adapter knows its own MPC-state prefix width; trust it over the
+        # config so the raw-state slice in ResetWithRawStateWrapper is correct.
+        state_dim = int(getattr(venv, "mpc_state_dim", state_dim))
+    else:
+        vec_env_cls = DummyVecEnv if vec_type == "dummy" else SubprocVecEnv
+        venv = make_vec_env(
+            _make_gate_env_fn(track, env_kwargs),
+            n_envs=int(n_envs),
+            seed=int(seed),
+            vec_env_cls=vec_env_cls,
+        )
 
     if normalize_obs:
         if train_vecnorm is not None:
@@ -1334,6 +1382,8 @@ def resolve_policy_class(policy_type: str, mpc_backend: Optional[str] = None):
         if mpc_backend == "pytorch":
             return MlpMpcPolicy
         return MlpMpcPolicyDiffMPC
+    if policy_type == "acmpc_brax":
+        return MlpMpcPolicyBrax
     if policy_type == "mlp_only":
         return MlpOnlyPolicy
     raise ValueError(f"Unknown policy_type: {policy_type}")
@@ -1345,6 +1395,8 @@ def resolve_eval_backend_request(policy_type: str, mpc_backend: str) -> str:
     """
     if str(policy_type) == "acmpc_diffmpc":
         return "both"
+    if str(policy_type) == "acmpc_brax":
+        return "diffmpc"
     return str(mpc_backend).lower()
 
 

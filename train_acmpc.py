@@ -118,15 +118,30 @@ def main() -> None:
             mpc_backend = "fast" if th.cuda.is_available() else "diffmpc"
         else:
             mpc_backend = "diffmpc"
+    if policy_type == "acmpc_brax" and mpc_backend != "diffmpc":
+        # The fast CUDA kernels are drone-specific; the Brax template uses diffmpc.
+        print(f"[Brax] Forcing mpc_backend=diffmpc (was {mpc_backend}).")
+        mpc_backend = "diffmpc"
     if mpc_backend not in {"pytorch", "diffmpc", "fast"}:
         raise ValueError(f"Unsupported mpc_backend={mpc_backend}. Use one of: pytorch, diffmpc, fast.")
     os.environ["ACMPC_MPC_BACKEND"] = mpc_backend
+
+    # Brax template-MPC hyperparameters (consumed by mlp_mpc_policy_brax).
+    for cfg_key, env_key in (
+        ("mpc_dt", "ACMPC_BRAX_DT"),
+        ("mpc_ctrl_scale", "ACMPC_BRAX_CTRL_SCALE"),
+        ("mpc_range_q", "ACMPC_BRAX_RANGE_Q"),
+        ("mpc_range_p", "ACMPC_BRAX_RANGE_P"),
+    ):
+        if cfg.get(cfg_key) is not None:
+            os.environ[env_key] = str(cfg.get(cfg_key))
 
     if device.startswith("cuda") and not th.cuda.is_available():
         print("[Warning] device=cuda requested but torch.cuda.is_available() is False. Falling back to CPU.")
         device = "cpu"
 
     env_cfg = cfg.get("env", {}) or {}
+    env_backend = str(env_cfg.get("backend", "gate")).lower()
     track = str(env_cfg.get("track", "all"))
     env_kwargs = dict(env_cfg.get("kwargs", {}) or {})
     track_config_path = _resolve_track_config_path(
@@ -186,6 +201,7 @@ def main() -> None:
         mpc_horizon=mpc_horizon,
         track=track,
         track_config_path=track_config_path,
+        env_backend=env_backend,
     )
     print(
         "[Signature] "
@@ -266,7 +282,19 @@ def main() -> None:
         log_dir=log_dir,
         state_dim=mpc_state_dim,
         vecnorm_stats_path=str(resume_vecnorm_path) if resume_vecnorm_path is not None else None,
+        env_backend=env_backend,
     )
+
+    # For Brax the adapter derives the true MPC-state prefix width from the
+    # robot; adopt it so the obs extractor / policy / sanity checks agree.
+    if env_backend == "brax":
+        resolved_state_dim = int(getattr(train_env, "mpc_state_dim", mpc_state_dim))
+        if resolved_state_dim != mpc_state_dim:
+            print(
+                f"[Brax] Overriding mpc_state_dim {mpc_state_dim} -> {resolved_state_dim} "
+                "(from robot generalized coords)."
+            )
+            mpc_state_dim = resolved_state_dim
 
     train_vecnorm = _find_vecnormalize(train_env)
     _run_input_sanity_checks(
@@ -292,6 +320,7 @@ def main() -> None:
             log_dir=log_dir,
             state_dim=mpc_state_dim,
             train_vecnorm=train_vecnorm,
+            env_backend=env_backend,
         )
 
     episode_cb = EpisodeCountCallback(print_every_episodes=episode_print_freq, verbose=1)
@@ -406,19 +435,37 @@ def main() -> None:
                 f"Checked best={best_ckpt_path} and final={save_path!r}."
             )
 
-        eval_backend_request = resolve_eval_backend_request(policy_type, mpc_backend)
-        evaluate_model(
-            selected_eval_model_path,
-            log_dir,
-            track_config_path=track_config_path,
-            device=device,
-            policy_type=policy_type,
-            mpc_backend=eval_backend_request,
-            single_track=None if track_config_path is not None else track,
-            env_kwargs=env_kwargs,
-            seed=seed,
-            max_steps_cap=post_eval_max_steps_cap,
-        )
+        if env_backend == "brax":
+            from utils.evaluate_brax import evaluate_brax_model
+
+            bk = dict(env_kwargs or {})
+            evaluate_brax_model(
+                selected_eval_model_path,
+                robot=str(bk.get("robot", track)),
+                policy_type=policy_type,
+                mpc_horizon=mpc_horizon,
+                mpc_max_iter=mpc_max_iter,
+                episode_length=int(bk.get("episode_length", 1000)),
+                episodes=eval_episodes,
+                device=device,
+                brax_backend=str(bk.get("brax_backend", "generalized")),
+                mpc_state_mode=str(bk.get("mpc_state_mode", "full")),
+                seed=seed,
+            )
+        else:
+            eval_backend_request = resolve_eval_backend_request(policy_type, mpc_backend)
+            evaluate_model(
+                selected_eval_model_path,
+                log_dir,
+                track_config_path=track_config_path,
+                device=device,
+                policy_type=policy_type,
+                mpc_backend=eval_backend_request,
+                single_track=None if track_config_path is not None else track,
+                env_kwargs=env_kwargs,
+                seed=seed,
+                max_steps_cap=post_eval_max_steps_cap,
+            )
 
     print(
         f"[Train] done: timesteps={total_timesteps} n_envs={n_envs} episodes_completed={episode_cb.episode_count}"

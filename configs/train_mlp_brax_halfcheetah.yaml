@@ -1,0 +1,59 @@
+# Phase-1 runnable target: validate the Brax env plumbing + PPO loop with the
+# MLP-only policy (no MPC). The acmpc_* policies on Brax need Phase 2 (template
+# dynamics) and Phase 3 (policy generalization) first.
+seed: 0
+device: auto
+policy_type: mlp_only
+mpc_backend: diffmpc      # unused by mlp_only; kept for config uniformity
+mpc_state_dim: 18         # advisory: the Brax adapter overrides this from the robot
+
+env:
+  backend: brax
+  track: halfcheetah      # label only (used for auto_track_naming)
+  kwargs:
+    robot: halfcheetah
+    episode_length: 1000
+    action_repeat: 1
+    brax_backend: generalized
+
+vec_env:
+  n_envs: 64
+  type: dummy             # ignored for brax (single-process vmap batch)
+  normalize_obs: true
+  clip_obs: 10.0
+
+ppo:
+  total_timesteps: 2_000_000
+  n_steps: 256
+  batch_size: 2048
+  n_epochs: 10
+  learning_rate:
+    schedule: linear
+    initial: 0.0003
+    final_factor: 0.1
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+
+logging:
+  log_dir: runs/brax_mlp_halfcheetah
+  save_path: runs/brax_mlp_halfcheetah/model.zip
+  auto_track_naming: true
+  progress_bar: true
+
+checkpoint:
+  dir: runs/brax_mlp_halfcheetah/checkpoints
+  freq: 200000
+
+resume:
+  enabled: false
+  auto_best_if_compatible: true
+
+eval:
+  enabled: false
+
+post_eval:
+  enabled: false

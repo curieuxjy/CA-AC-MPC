@@ -1,0 +1,73 @@
+# Phase-3 target: actor-critic MPC (template double-integrator) on Brax HalfCheetah.
+# The actor predicts the MPC cost; the template-model MPC produces the action;
+# PPO trains end-to-end. diffmpc backend only (fast CUDA kernels are drone-specific).
+seed: 0
+device: auto
+policy_type: acmpc_brax
+mpc_backend: diffmpc
+mpc_max_iter: 5
+mpc_horizon: 3
+mpc_state_dim: 12          # advisory; adapter overrides to 2*n_act (HalfCheetah: 6 -> 12)
+
+# Template-MPC hyperparameters (-> ACMPC_BRAX_* env vars)
+mpc_dt: 0.05
+mpc_ctrl_scale: 1.0
+mpc_range_q: 100.0
+mpc_range_p: 10.0
+
+# std ~= 0.30 -> log_std_init ~= ln(0.30)
+log_std_init: -1.2
+
+env:
+  backend: brax
+  track: halfcheetah
+  kwargs:
+    robot: halfcheetah
+    episode_length: 1000
+    action_repeat: 1
+    brax_backend: generalized
+    mpc_state_mode: actuated   # MPC prefix = [q_act, qd_act] (last n_act of q/qd)
+
+vec_env:
+  n_envs: 64
+  type: dummy                  # ignored for brax
+  normalize_obs: true
+  clip_obs: 10.0
+
+ppo:
+  total_timesteps: 5_000_000
+  n_steps: 256
+  batch_size: 2048
+  n_epochs: 10
+  learning_rate:
+    schedule: linear
+    initial: 0.0003
+    final_factor: 0.1
+    decay_start: 0.3
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  target_kl: 0.03
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+
+logging:
+  log_dir: runs/acmpc_brax_halfcheetah
+  save_path: runs/acmpc_brax_halfcheetah/model.zip
+  auto_track_naming: true
+  progress_bar: true
+
+checkpoint:
+  dir: runs/acmpc_brax_halfcheetah/checkpoints
+  freq: 200000
+
+resume:
+  enabled: false
+  auto_best_if_compatible: true
+
+eval:
+  enabled: false
+
+post_eval:
+  enabled: false

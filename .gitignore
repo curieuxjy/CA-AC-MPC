@@ -1,0 +1,37 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Training / experiment outputs ---
+runs/
+checkpoints/
+logs/
+wandb/
+*.zip
+*.vecnorm.pkl
+*.meta.json
+events.out.tfevents.*
+*.html            # Brax rollout renders (utils/evaluate_brax.py --render)
+
+# --- CUDA JIT build artifacts (drone fast backend) ---
+differentialMPCPerformance/build/
+
+# --- OS / editor ---
+.DS_Store
+*.swp
+.idea/
+.vscode/
