@@ -1,0 +1,35 @@
+# Phase-7 (EXPERIMENTAL): Analytic Policy Gradient on Brax HalfCheetah.
+# Differentiates the windowed return through the differentiable Brax sim AND the
+# differentiable MPC into the actor cost net. No PPO. Requires the jax2torch
+# bridge; gradients cross the JAX<->PyTorch boundary (fragile -- see plan P7).
+seed: 0
+device: auto
+
+mpc_horizon: 3
+mpc_max_iter: 5
+mpc_dt: 0.05
+mpc_ctrl_scale: 1.0
+mpc_range_q: 100.0
+mpc_range_p: 10.0
+
+env:
+  kwargs:
+    robot: halfcheetah
+    episode_length: 1000
+    action_repeat: 1
+    brax_backend: generalized
+
+vec_env:
+  n_envs: 64
+
+apg:
+  total_timesteps: 2_000_000
+  window: 16              # H: short-horizon gradient window (DReplay truncation length)
+  gamma: 0.99
+  learning_rate: 0.0003
+  max_grad_norm: 1.0
+  dreplay_interval: 4     # every N windows, reset sim to demonstration/initial state
+  log_every: 20
+
+logging:
+  log_dir: runs/apg_brax_halfcheetah

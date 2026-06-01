@@ -152,7 +152,17 @@ drone `evaluate_acmpc2.py`는 gate 전용이라 비파괴, Brax는 별도 평가
 - 지표: 샘플효율(return vs steps), 최종 성능, MPC solve 시간/스텝, 학습 안정성.
 - `utils/evaluate_acmpc2.py`를 Brax 평가 경로로 확장(롤아웃/플롯; 영상은 Brax HTML 렌더 활용 가능).
 
-### Phase 7 — (옵션/향후) DiffMimic 정렬 확장
+### Phase 7 — DiffMimic 정렬 (APG + DReplay) ⚠️ 코드 완료 (EXPERIMENTAL, 실행 검증 안 됨)
+구현됨: `envs/jax_torch_bridge.py`(`jax2torch`: Brax step을 torch.autograd.Function으로 감싸 backward=`jax.vjp`),
+`envs/diff_brax_env.py`(`DifferentiableBraxEnv`: flatten된 state를 torch로 carry해 다단계 grad 보존),
+`utils/train_apg.py`(short-horizon windowed return 미분 + DReplay 리셋, PPO 아님), `configs/train_apg_brax_halfcheetah.yaml`,
+`tests/test_jax_torch_bridge.py`(jax2torch grad vs jax.grad).
+설계 메모: 로코모션 우선이라 DiffMimic의 imitation loss 대신 **Brax 네이티브 reward를 미분가능 시뮬 통해 직접 미분**(SHAC식 short-horizon APG).
+`reference_fn` 훅은 향후 mocap imitation용으로 열어둠. gradient가 sim+MPC 양쪽을 통과(action→MPC→actor params, reward→sim→action→...).
+**한계(명시)**: JAX↔PyTorch 경계(`jax2torch`)가 fragile. 불안정하면 JAX 네이티브 actor-MPC 재작성이 정도. humanoid mocap은
+데이터 자산(SMPL/AMP) 필요해 미착수. 실행 검증 전무(의존성 미설치) — 검증 사다리 1순위는 `tests/test_jax_torch_bridge.py`.
+
+### Phase 7 — (옵션/향후) DiffMimic 정렬 확장 (원본 계획, 참고)
 - **APG 모드**: Brax 미분가능성을 켜서 imitation loss를 sim·MPC 통해 actor로 직접 역전파.
   - PyTorch 경계에선 `jax2torch`로 Brax 그래디언트를 autograd로 노출 필요(브리지 한계 → 이때 JAX 네이티브 재고).
   - **DReplay/RSI**: 주기적으로 sim state를 reference 모션으로 리셋해 그래디언트 horizon 단축·발산 억제.
