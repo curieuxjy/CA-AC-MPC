@@ -6,6 +6,7 @@ DiffMimic은 "differentiable simulator(Brax) 위에서 다자유도 로봇을 �
 
 > 상세 단계별 계획: [`docs/brax_port_plan.md`](docs/brax_port_plan.md)
 > CUDA 머신 셋업: [`docs/SETUP_CUDA.md`](docs/SETUP_CUDA.md)
+> **다른 PC 검증 매뉴얼(단계별 체크리스트)**: [`docs/VERIFICATION.md`](docs/VERIFICATION.md)
 
 ---
 
