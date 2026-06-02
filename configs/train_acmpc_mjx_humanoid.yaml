@@ -1,0 +1,78 @@
+# Complex robot: actor-critic MPC (template double-integrator) on an MJX humanoid
+# loaded from an MJCF file. Defaults to Brax's bundled humanoid.xml (MJX-ready);
+# set env.kwargs.mjcf_path to any custom MJCF (e.g. a MuJoCo Menagerie humanoid).
+seed: 0
+device: auto
+policy_type: acmpc_brax
+mpc_backend: diffmpc
+mpc_max_iter: 5
+mpc_horizon: 3
+mpc_state_dim: 34          # advisory; adapter overrides to 2*n_act (humanoid: 17 -> 34)
+
+# Template-MPC hyperparameters (-> ACMPC_BRAX_* env vars). dt ~ env control dt.
+mpc_dt: 0.015
+mpc_ctrl_scale: 1.0
+mpc_range_q: 100.0
+mpc_range_p: 10.0
+
+log_std_init: -1.2
+
+env:
+  backend: brax
+  track: humanoid
+  kwargs:
+    robot: humanoid
+    mjcf_path: brax_humanoid     # bundled humanoid.xml; swap for a custom MJCF path
+    brax_backend: mjx
+    mpc_state_mode: actuated     # MPC prefix = [q_act, qd_act] (last n_act of q/qd)
+    episode_length: 1000
+    action_repeat: 1
+    brax_env_kwargs:
+      forward_reward_weight: 1.25
+      ctrl_cost_weight: 0.1
+      healthy_reward: 5.0
+      healthy_z_range: [1.0, 2.0]
+
+vec_env:
+  n_envs: 32                     # MJX is heavier + host round-trip per step; keep modest
+  type: dummy                    # ignored for brax
+  normalize_obs: true
+  clip_obs: 10.0
+
+ppo:
+  total_timesteps: 10_000_000
+  n_steps: 256
+  batch_size: 2048
+  n_epochs: 8
+  learning_rate:
+    schedule: linear
+    initial: 0.0003
+    final_factor: 0.1
+    decay_start: 0.3
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  target_kl: 0.03
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+
+logging:
+  log_dir: runs/acmpc_mjx_humanoid
+  save_path: runs/acmpc_mjx_humanoid/model.zip
+  auto_track_naming: true
+  progress_bar: true
+
+checkpoint:
+  dir: runs/acmpc_mjx_humanoid/checkpoints
+  freq: 500000
+
+resume:
+  enabled: false
+  auto_best_if_compatible: true
+
+eval:
+  enabled: false
+
+post_eval:
+  enabled: false

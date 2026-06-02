@@ -172,6 +172,46 @@ python train_acmpc.py --config configs/train_acmpc_fixed_map.yaml  # 첫 실행 
 
 ---
 
+## 7b. 복잡 로봇 (MJCF + MJX)
+
+Brax 내장 외에 **임의 MJCF 로봇**(humanoid 등)을 MJX 백엔드로 돌리는 경로.
+
+### 의존성
+```bash
+pip install mujoco            # mujoco.mjx 포함 (brax의 backend='mjx'가 사용)
+```
+
+### 바로 실행 (Brax 번들 humanoid, 추가 파일 불필요)
+`mjcf_path: brax_humanoid`는 Brax에 내장된 MJX-ready `humanoid.xml`을 쓴다.
+```bash
+python tests/test_mjcf_env.py        # MJCF/MJX env 로드·step 확인 (jax+brax+mujoco)
+python train_acmpc.py --config configs/train_acmpc_mjx_humanoid.yaml \
+  --override ppo.total_timesteps=20000 --override vec_env.n_envs=8
+python utils/evaluate_brax.py --model-path runs/acmpc_mjx_humanoid/humanoid/model.zip \
+  --robot humanoid --policy-type acmpc_brax --mjcf-path brax_humanoid --brax-backend mjx --mpc-horizon 3
+```
+
+### 커스텀 MJCF 로봇 (예: MuJoCo Menagerie)
+```bash
+git clone https://github.com/google-deepmind/mujoco_menagerie
+# config의 env.kwargs.mjcf_path를 해당 .xml로 교체, 예:
+#   mjcf_path: mujoco_menagerie/unitree_h1/scene.xml
+```
+주의:
+- **floating base 필요**: 로코모션은 base에 `freejoint`가 있어야 한다(첫 7 qpos / 6 qvel = free base).
+  Menagerie 로봇 xml은 보통 고정 베이스이거나 floor가 없으니, `scene.xml`(floor 포함)을 쓰거나
+  freejoint+floor를 넣은 wrapper MJCF를 만든다.
+- **작동관절 추출 가정**: 어댑터는 `q/qd`의 마지막 `n_act`개를 작동관절로 본다(root-first 규약).
+  관절 수 ≠ 액추에이터 수(mimic/unactuated joint)면 어긋난다 → `tests/test_mjcf_env.py` 출력으로 확인.
+- **MJX 컴파일**: 첫 step에서 XLA 컴파일이 오래 걸린다(수십 초~분). `n_envs`는 작게 시작.
+- **URDF**: Brax 네이티브 로더는 제한적. MuJoCo로 MJCF 변환 후 사용
+  (`<mujoco><include>`/`mj_loadXML`, 또는 `mjcf` 도구). 변환본을 `mjcf_path`로.
+
+### Phase 7(APG)도 동일 적용
+`configs/train_apg_brax_halfcheetah.yaml`의 `env.kwargs`에 `mjcf_path`/`brax_backend: mjx`를
+넣으면 `DifferentiableBraxEnv`도 MJCF 로봇으로 APG를 돌린다(단, MJX 접촉 그래디언트는 노이즈가
+있어 APG 안정성은 더 불확실 — DReplay·짧은 window 필수).
+
 ## 8. 트러블슈팅
 
 | 증상 | 원인 / 해결 |

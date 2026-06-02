@@ -91,6 +91,7 @@ def train_apg(cfg: dict) -> None:
         action_repeat=int(bk.get("action_repeat", 1)),
         seed=seed,
         backend=bk.get("brax_backend", None),
+        mjcf_path=bk.get("mjcf_path", None),
         device=device,
     )
 

@@ -38,6 +38,7 @@ class DifferentiableBraxEnv:
         seed: int = 0,
         backend: Optional[str] = None,
         env_name: Optional[str] = None,
+        mjcf_path: Optional[str] = None,
         device: str = "cpu",
     ) -> None:
         import jax
@@ -55,6 +56,15 @@ class DifferentiableBraxEnv:
         backend = backend or spec.get("backend", "generalized")
         self.robot = robot
 
+        env_kwargs = {}
+        if mjcf_path is not None:
+            import envs.mjcf_env  # noqa: F401  (registers 'mjcf_locomotion')
+
+            env_name = "mjcf_locomotion"
+            backend = backend if backend != "generalized" else "mjx"
+            env_kwargs["mjcf_path"] = mjcf_path
+        self.mjcf_path = mjcf_path
+
         self._env = envs.create(
             env_name,
             episode_length=int(episode_length),
@@ -62,6 +72,7 @@ class DifferentiableBraxEnv:
             auto_reset=False,
             batch_size=int(n_envs),
             backend=backend,
+            **env_kwargs,
         )
         self.num_envs = int(n_envs)
         self.n_act = int(self._env.action_size)

@@ -90,6 +90,7 @@ def evaluate_brax_model(
     device: str = "auto",
     brax_backend: str = "generalized",
     mpc_state_mode: Optional[str] = None,
+    mjcf_path: Optional[str] = None,
     vecnorm_path: Optional[str] = None,
     seed: int = 0,
     render: Optional[str] = None,
@@ -121,6 +122,10 @@ def evaluate_brax_model(
         "brax_backend": brax_backend,
         "mpc_state_mode": mpc_state_mode,
     }
+    if mjcf_path is not None:
+        env_kwargs["mjcf_path"] = mjcf_path
+        if brax_backend == "generalized":
+            env_kwargs["brax_backend"] = "mjx"
     env = _make_vec_env_from_cfg(
         track=robot,
         env_kwargs=env_kwargs,
@@ -208,6 +213,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--episodes", type=int, default=30)
     p.add_argument("--device", default="auto")
     p.add_argument("--brax-backend", default="generalized")
+    p.add_argument("--mjcf-path", default=None, help="custom MJCF (complex robots); e.g. brax_humanoid")
     p.add_argument("--vecnorm-path", default=None)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--render", default=None, help="optional output .html path")
@@ -232,6 +238,7 @@ def main() -> None:
         episodes=args.episodes,
         device=args.device,
         brax_backend=args.brax_backend,
+        mjcf_path=args.mjcf_path,
         vecnorm_path=args.vecnorm_path,
         seed=args.seed,
         render=args.render,

@@ -389,6 +389,7 @@ def _make_brax_venv(
         backend=bk.get("brax_backend", None),
         env_name=bk.get("env_name", None),
         mpc_state_mode=str(bk.get("mpc_state_mode", "full")),
+        mjcf_path=bk.get("mjcf_path", None),
         env_kwargs=dict(bk.get("brax_env_kwargs", {}) or {}),
     )
 

@@ -130,6 +130,7 @@ class BraxVecEnvAdapter(VecEnv):
         mpc_state_fn: StateFn = default_mpc_state_fn,
         task_obs_fn: StateFn = default_task_obs_fn,
         mpc_state_mode: str = "full",
+        mjcf_path: Optional[str] = None,
         env_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         import jax
@@ -142,9 +143,22 @@ class BraxVecEnvAdapter(VecEnv):
         spec = ROBOT_SPECS.get(robot, {})
         env_name = env_name or spec.get("env_name", robot)
         backend = backend or spec.get("backend", "generalized")
+        env_kwargs = dict(env_kwargs or {})
+
+        # Custom MJCF robot (complex robots: humanoid, quadruped, ...): route to the
+        # generic MJCF env registered as 'mjcf_locomotion'. MJX is the default
+        # backend for contact-rich MJCF models.
+        if mjcf_path is not None:
+            import envs.mjcf_env  # noqa: F401  (registers 'mjcf_locomotion')
+
+            env_name = "mjcf_locomotion"
+            backend = backend if backend != "generalized" else "mjx"
+            env_kwargs["mjcf_path"] = mjcf_path
+
         self.robot = robot
         self.env_name = env_name
         self.brax_backend = backend
+        self.mjcf_path = mjcf_path
         self._mpc_state_fn = mpc_state_fn
         self._task_obs_fn = task_obs_fn
 
@@ -157,7 +171,7 @@ class BraxVecEnvAdapter(VecEnv):
             auto_reset=False,
             batch_size=int(n_envs),
             backend=backend,
-            **(env_kwargs or {}),
+            **env_kwargs,
         )
 
         # "actuated" mode needs the action size, which is known only after the
